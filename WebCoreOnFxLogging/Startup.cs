@@ -8,14 +8,22 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Serilog;
 
 namespace WebCoreOnFxLogging
 {
     public class Startup
     {
         public Startup(IConfiguration configuration)
-        {
+        {            
             Configuration = configuration;
+
+            // https://github.com/serilog/serilog-extensions-logging
+            Log.Logger = new LoggerConfiguration()
+              .Enrich.FromLogContext()
+              .WriteTo.Seq("http://localhost:5341") // Serilog.Sinks.Seq
+              .WriteTo.Console()
+              .CreateLogger();
         }
 
         public IConfiguration Configuration { get; }
@@ -23,9 +31,11 @@ namespace WebCoreOnFxLogging
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
+
             services.AddLogging(loggingBuilder =>
             {
-                loggingBuilder.AddSeq();
+                loggingBuilder.AddSerilog(dispose: true);
+                //loggingBuilder.AddSeq(); // Seq.Extensions.Logging
             });
             services.AddMvc();
         }
