@@ -13,6 +13,7 @@ using System.Security.Principal;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+ 
 
 // https://github.com/serilog/serilog/wiki/Configuration-Basics
 // https://github.com/serilog/serilog/wiki/Writing-Log-Events
