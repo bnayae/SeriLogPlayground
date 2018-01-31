@@ -7,8 +7,10 @@ using Serilog.Sinks.Elasticsearch;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.Remoting.Messaging;
 using System.Security.Principal;
 using System.Text;
 using System.Threading;
@@ -25,6 +27,10 @@ namespace SerilLogTest
 {
     class Program
     {
+        private static int _counter = 0;
+        private static AsyncLocal<int> _customContext = new AsyncLocal<int>();
+        private static AsyncLocal<ImmutableList<int>> _customContextFlow = new AsyncLocal<ImmutableList<int>>();
+
         private static readonly string[] NAMES = { "Ben", "Dan", "Ike", "Mona", "Suzi" };
         private static ConcurrentDictionary<string, LogEventLevel> _enableLog = new ConcurrentDictionary<string, LogEventLevel>
         {
@@ -33,6 +39,7 @@ namespace SerilLogTest
         private const string LOG_FORMAT = "{Timestamp:HH:mm} [{Level}] (Context: {SourceContext}, Version: {Version}, Thread:{ThreadId}, Machine:{Machine}, User: {UserName}) {NewLine}{Message}{NewLine}{Exception}\r\n";
         static void Main(string[] args)
         {
+            _customContextFlow.Value = ImmutableList<int>.Empty;
             //Sample1();
             //ELK();
             //CallContextLog();
@@ -177,16 +184,26 @@ namespace SerilLogTest
                     .CreateLogger();
             Task a = Task.Run(async () =>
             {
-                using (LogContext.PushProperty("The-Context", "I"))
-                using (LogContext.PushProperty("More-Context", "*"))
+                int id = Interlocked.Increment(ref _counter);
+                _customContext.Value = id;
+                _customContextFlow.Value = _customContextFlow.Value.Add(id);
+                using (LogContext.PushProperty("CIds", _customContextFlow.Value)) //Guid.NewGuid()))
+                using (LogContext.PushProperty("CId", id)) //Guid.NewGuid()))
+                using (LogContext.PushProperty("R", "I"))
+                using (LogContext.PushProperty("S", "*"))
                 {
                     await AsyncA(1);
                 }
             });
             Task b = Task.Run(async () =>
             {
-                using (LogContext.PushProperty("The-Context", "II"))
-                using (LogContext.PushProperty("Other-Context", "**"))
+                int id = Interlocked.Increment(ref _counter);
+                _customContext.Value = id;
+                _customContextFlow.Value = _customContextFlow.Value.Add(id);
+                using (LogContext.PushProperty("CIds", _customContextFlow.Value)) //Guid.NewGuid()))
+                using (LogContext.PushProperty("CId", id)) //Guid.NewGuid()))
+                using (LogContext.PushProperty("R", "II"))
+                using (LogContext.PushProperty("S", "**"))
                 {
                     await AsyncA(2);
                 }
@@ -205,11 +222,64 @@ namespace SerilLogTest
             await Task.Delay(50);
             Log.Logger.Information("Sync B = {@i}", i);
             await AsyncC(i);
+            Log.Logger.Information("Sync BXX = {@i}", i);
         }
         private static async Task AsyncC(int i)
         {
             await Task.Delay(50);
             Log.Logger.Information("Sync C = {@i}", i);
+
+            Task a = Task.Run( async () =>
+            {
+                using (LogContext.PushProperty("PCId", _customContext.Value)) //Guid.NewGuid()))
+                {
+                    int id = Interlocked.Increment(ref _counter);
+                    _customContext.Value = id;
+                    _customContextFlow.Value = _customContextFlow.Value.Add(id);
+                    using (LogContext.PushProperty("CIds", _customContextFlow.Value)) //Guid.NewGuid()))
+                    using (LogContext.PushProperty("CId", id)) //Guid.NewGuid()))
+                    {
+                        await AsyncD1(i, 'A');
+                    }
+                }
+            });
+            Task b = Task.Run( async () =>
+            {
+                using (LogContext.PushProperty("PCId", _customContext.Value)) //Guid.NewGuid()))
+                {
+                    int id = Interlocked.Increment(ref _counter);
+                    _customContext.Value = id;
+                    _customContextFlow.Value = _customContextFlow.Value.Add(id);
+                    using (LogContext.PushProperty("CIds", _customContextFlow.Value)) //Guid.NewGuid()))
+                    using (LogContext.PushProperty("CId", id)) //Guid.NewGuid()))
+                    {
+                        await AsyncD1(i, 'B');
+                    }
+                }
+            });
+            await Task.WhenAll(a, b);
+        }
+        private static async Task AsyncD1(int i, char x)
+        {
+            await Task.Delay(50);
+            Log.Logger.Information("Sync D1 = {@i} {@x}", i, x);
+            await AsyncE1(i, x);
+        }
+        private static async Task AsyncD2(int i, char x)
+        {
+            await Task.Delay(50);
+            Log.Logger.Information("Sync D2 = {@i} {@x}", i, x);
+            await AsyncE2(i, x);
+        }
+        private static async Task AsyncE1(int i, char x)
+        {
+            await Task.Delay(50);
+            Log.Logger.Information("Sync E1 = {@i} {@x}", i, x);
+        }
+        private static async Task AsyncE2(int i, char x)
+        {
+            await Task.Delay(50);
+            Log.Logger.Information("Sync E2 = {@i} {@x}", i, x);
         }
 
         #endregion // CallContextLogAsync
